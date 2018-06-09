@@ -3,7 +3,7 @@ A small Go utility to check for the optimal MTU value to set.
 Runs on Linux and Darwin machines.
 
 Grab the relevant binary or go get:
-`go get https://gitlab.com/mijho/mtucheck"
+`go get https://gitlab.com/mijho/mtucheck`
 
 Example output:
 ```
