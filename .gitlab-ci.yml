@@ -1,0 +1,30 @@
+# This file is a template, and might need editing before it works on your project.
+image: golang:latest
+
+variables:
+  # Please edit to your GitLab project
+  REPO_NAME: gitlab.com/mijho/mtucheck
+  
+before_script:
+  - mkdir -p $GOPATH/src/$(dirname $REPO_NAME)
+  - ln -svf $CI_PROJECT_DIR $GOPATH/src/$REPO_NAME
+  - cd $GOPATH/src/$REPO_NAME
+
+stages:
+    # - test
+    - build
+
+# format:
+#     stage: test
+#     script:
+#       - go fmt $(go list ./... | grep -v /vendor/)
+#       - go vet $(go list ./... | grep -v /vendor/)
+#       - go test -race $(go list ./... | grep -v /vendor/)
+
+compile:
+    stage: build
+    script:
+      - go build -race -ldflags "-extldflags '-static'" -o $CI_PROJECT_DIR/mtucheck
+    artifacts:
+      paths:
+        - mtucheck
