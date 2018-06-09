@@ -38,6 +38,7 @@ func checkMtuResult(s string, err error) int {
 
 func main() {
 	count := 1212
+	fmt.Println("just to check gitlab CI :)")
 
 	OuterLoop:
 		for i := 1500; i > count; i -= 8 {
