@@ -2,8 +2,15 @@ A small Go utility to check for the optimal MTU value to set.
 
 Runs on Linux and Darwin machines.
 
-Grab the relevant binary or go get:
+Grab with go get:
 `go get gitlab.com/mijho/mtucheck`
+
+Clone the repo and build the binary:
+```
+$ git clone https://gitlab.com/mijho/mtucheck.git
+$ cd mtucheck
+$ go build mtucheck.go
+```
 
 Example output:
 ```
