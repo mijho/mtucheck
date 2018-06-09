@@ -1,0 +1,17 @@
+stages:
+  - build
+
+build:
+  stage: build
+  image: golang:1.10.1
+  before_script:
+    - cd $GOPATH/src
+    - mkdir -p gitlab.com/$CI_PROJECT_NAMESPACE
+    - cd gitlab.com/$CI_PROJECT_NAMESPACE
+    - ln -s $CI_PROJECT_DIR
+    - cd $CI_PROJECT_NAME
+  script:
+    # Compile and name the binary as `hello`
+    - go build -o mtucheck
+    # Execute the binary
+    - ./mtucheck
