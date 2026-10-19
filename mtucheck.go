@@ -1,66 +1,88 @@
+// Command mtucheck finds the largest MTU that can reach a host without
+// fragmentation, by sending non-fragmentable pings of decreasing size.
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
-	"log"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 )
 
-var err error
+// headerOverhead is the IPv4 header (20 bytes) plus the ICMP header (8 bytes).
+// ping's -s flag sets the ICMP payload size, so MTU = payload + headerOverhead.
+const headerOverhead = 28
 
-func mtuCheckDarwin(s string) error {
-	cmd := exec.Command("ping", "-D", "-c2", "-s", s, "1.1.1.1")
-	_, err := cmd.CombinedOutput()
-	return err
-}
-
-func mtuCheckLinux(s string) error {
-	cmd := exec.Command("ping", "-M", "Do", "-c2", "-s", s, "1.1.1.1")
-	_, err := cmd.CombinedOutput()
-	return err
-}
-
-func checkMtuResult(s string, err error) int {
-	if err != nil {
-		errorcode := fmt.Sprintf("%s", err)
-		if errorcode == "exit status 2"{
-			fmt.Printf("ERR: %s\n", s)
-			return 2
-		} else {
-			log.Fatalf("cmd.Run failed with %s\n", err)
-		}
+// pingArgs returns the ping arguments that send a single non-fragmentable
+// probe with the given MTU, or an error if the OS is unsupported.
+func pingArgs(goos string, mtu int, host string) ([]string, error) {
+	payload := strconv.Itoa(mtu - headerOverhead)
+	switch goos {
+	case "darwin":
+		return []string{"-D", "-c", "2", "-t", "5", "-s", payload, host}, nil
+	case "linux":
+		return []string{"-M", "do", "-c", "2", "-w", "5", "-s", payload, host}, nil
+	default:
+		return nil, fmt.Errorf("unsupported OS %q: only Linux and Darwin are supported", goos)
 	}
-	fmt.Printf("PAS: %s\n", s)
-	return 0
+}
+
+// probe reports whether a packet of the given MTU gets through unfragmented.
+// A non-nil error means ping could not be run at all; a failed probe is not an error.
+func probe(goos string, mtu int, host string) (bool, error) {
+	args, err := pingArgs(goos, mtu, host)
+	if err != nil {
+		return false, err
+	}
+	if err := exec.Command("ping", args...).Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return false, nil // no reply, "frag needed", or "message too long"
+		}
+		return false, err // ping missing or not executable
+	}
+	return true, nil
+}
+
+// ifconfigHint returns the command that would apply the MTU on this OS.
+func ifconfigHint(goos string, mtu int, iface string) string {
+	if goos == "darwin" {
+		return fmt.Sprintf("ifconfig %s mtu %d", iface, mtu)
+	}
+	return fmt.Sprintf("ip link set dev %s mtu %d", iface, mtu)
 }
 
 func main() {
-	count := 1212
-	fmt.Println("just to check gitlab CI :)")
+	host := flag.String("host", "1.1.1.1", "host to probe")
+	maxMTU := flag.Int("max", 1500, "largest MTU to try")
+	minMTU := flag.Int("min", 1200, "smallest MTU to try")
+	step := flag.Int("step", 8, "MTU decrement between probes")
+	iface := flag.String("iface", "IFNAME", "interface name to show in the suggested command")
+	flag.Parse()
 
-	OuterLoop:
-		for i := 1500; i > count; i -= 8 {
-			s := strconv.Itoa(i)
+	if *step <= 0 || *minMTU <= headerOverhead || *maxMTU < *minMTU {
+		fmt.Fprintln(os.Stderr, "invalid -min/-max/-step values")
+		os.Exit(2)
+	}
 
-			switch os := runtime.GOOS; os {
-				case "darwin":
-					err := mtuCheckDarwin(s)
-					ec := checkMtuResult(s, err)
-					if ec == 0 {
-						fmt.Printf("ifconfig IFNAME mtu %s\n", s)
-						break OuterLoop
-					}
-				case "linux":
-					err := mtuCheckLinux(s)
-					ec := checkMtuResult(s, err)
-					if ec == 0 {
-						fmt.Printf("ip link set dev IFNAME mtu %s\n", s)
-						break OuterLoop
-					}
-				default:
-					fmt.Println("This script only runs on Linux and Darwin")
-			}
+	goos := runtime.GOOS
+	for mtu := *maxMTU; mtu >= *minMTU; mtu -= *step {
+		ok, err := probe(goos, mtu, *host)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mtucheck: %v\n", err)
+			os.Exit(1)
 		}
+		if !ok {
+			fmt.Printf("ERR: %d\n", mtu)
+			continue
+		}
+		fmt.Printf("PAS: %d\n", mtu)
+		fmt.Println(ifconfigHint(goos, mtu, *iface))
+		return
+	}
+	fmt.Fprintf(os.Stderr, "no MTU in [%d, %d] passed; check connectivity to %s\n", *minMTU, *maxMTU, *host)
+	os.Exit(1)
 }
